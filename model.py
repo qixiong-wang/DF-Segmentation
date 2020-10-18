@@ -122,6 +122,7 @@ class BaseNet(nn.Module):
 
     def base_forward(self, x):
         x = self.pretrained.conv1(x)
+        low_feat = x
         x = self.pretrained.bn1(x)
         x = self.pretrained.relu(x)
         x = self.pretrained.maxpool(x)
@@ -129,7 +130,7 @@ class BaseNet(nn.Module):
         c2 = self.pretrained.layer2(c1)
         c3 = self.pretrained.layer3(c2)
         c4 = self.pretrained.layer4(c3)
-        return c1, c2, c3, c4
+        return low_feat, c1, c2, c3, c4
 
 
 class DANet(BaseNet):
@@ -156,24 +157,26 @@ class DANet(BaseNet):
     def __init__(self, nclass, backbone, aux=False, se_loss=False, norm_layer=nn.BatchNorm2d, **kwargs):
         super(DANet, self).__init__(nclass, backbone, aux, se_loss, norm_layer=norm_layer, **kwargs)
         self.head = DANetHead(2048, nclass, norm_layer)
-        self.conv1_D = nn.Sequential(nn.Dropout2d(0.2, False), nn.Conv2d(256, 128, 3, padding=1), nn.ReLU(),
+        self.conv1_D = nn.Sequential(nn.Dropout2d(0.5, False), nn.Conv2d(256, 128, 3, padding=1), nn.ReLU(),
                                      nn.BatchNorm2d(128))
-        self.conv2_D = nn.Sequential(nn.Dropout2d(0.2, False), nn.Conv2d(128, 64, 3, padding=1), nn.ReLU(),
+        self.conv2_D = nn.Sequential(nn.Dropout2d(0.5, False), nn.Conv2d(128, 64, 3, padding=1), nn.ReLU(),
                                      nn.BatchNorm2d(64))
         #         self.conv3_D = nn.Sequential(nn.Dropout2d(0.2, False), nn.Conv2d(64, nclass, 3, padding=1),nn.ReLU(),nn.BatchNorm2d(6))
         self.conv3_D = nn.Sequential(nn.Conv2d(64, nclass, 1))
 
     def forward(self, x):
         imsize = x.size()[2:]
-        _, _, c3, c4 = self.base_forward(x)
+        low_feats, _, _, _, c4 = self.base_forward(x)
 
         x = self.head(c4)
         x = list(x)
         #         x[0] = upsample(x[0], imsize)
+
+
         x[0] = interpolate(x[0], scale_factor=2)
         x[0] = self.conv1_D(x[0])
         x[0] = interpolate(x[0], scale_factor=2)
-        x[0] = self.conv2_D(x[0])
+        x[0] = self.conv2_D(x[0])+low_feats
         x[0] = interpolate(x[0], scale_factor=2)
         x[0] = self.conv3_D(x[0])
 
@@ -207,8 +210,8 @@ class DANetHead(nn.Module):
                                     norm_layer(inter_channels),
                                     nn.ReLU())
 
-        self.conv6 = nn.Sequential(nn.Dropout2d(0.2, False), nn.Conv2d(512, out_channels, 3, padding=1))
-        self.conv7 = nn.Sequential(nn.Dropout2d(0.2, False), nn.Conv2d(512, out_channels, 3, padding=1))
+        self.conv6 = nn.Sequential(nn.Dropout2d(0.5, False), nn.Conv2d(512, out_channels, 3, padding=1))
+        self.conv7 = nn.Sequential(nn.Dropout2d(0.5, False), nn.Conv2d(512, out_channels, 3, padding=1))
 
         self.conv8 = nn.Sequential(nn.Dropout2d(0.2, False), nn.Conv2d(512, 256, 3, padding=1), nn.ReLU(),
                                    nn.BatchNorm2d(256))
